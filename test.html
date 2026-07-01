@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Foliage Scan — Plant Disease Detector</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --moss-950: #0f1a12;
+    --moss-900: #16241a;
+    --moss-800: #1e3324;
+    --moss-700: #2b4a34;
+    --moss-500: #4d7a5a;
+    --moss-400: #6b9c78;
+    --leaf-300: #a8d5b5;
+    --leaf-200: #d3ecdb;
+    --cream: #f7f5ef;
+    --clay: #c97b4a;
+    --clay-dark: #a35f36;
+    --berry: #b8503f;
+  }
+  * { font-family: 'Space Mono', monospace; }
+  .display { font-family: 'Fraunces', serif; }
+
+  body {
+    background-color: var(--cream);
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(107,156,120,0.15) 0%, transparent 40%),
+      radial-gradient(circle at 85% 75%, rgba(201,123,74,0.10) 0%, transparent 45%);
+    background-attachment: fixed;
+  }
+
+  .grain {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0.04; z-index: 1;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .leaf-vein {
+    stroke: var(--moss-700);
+    stroke-width: 1;
+    fill: none;
+    opacity: 0.5;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--moss-500);
+    transition: all 0.25s ease;
+    background: rgba(255,255,255,0.5);
+  }
+  .drop-zone.dragover {
+    border-color: var(--clay);
+    background: rgba(201,123,74,0.08);
+    transform: scale(1.01);
+  }
+
+  .btn-analyze {
+    background: var(--moss-800);
+    color: var(--leaf-200);
+    transition: all 0.2s ease;
+    box-shadow: 4px 4px 0px var(--clay);
+  }
+  .btn-analyze:hover:not(:disabled) {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0px var(--clay);
+  }
+  .btn-analyze:active:not(:disabled) {
+    transform: translate(1px, 1px);
+    box-shadow: 2px 2px 0px var(--clay);
+  }
+  .btn-analyze:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .card-panel {
+    background: white;
+    border: 1px solid rgba(43,74,52,0.15);
+    box-shadow: 0 1px 2px rgba(15,26,18,0.04);
+  }
+
+  .spinner {
+    border: 3px solid rgba(247,245,239,0.3);
+    border-top-color: var(--leaf-200);
+    border-radius: 50%;
+    width: 20px; height: 20px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .fade-in { animation: fadeIn 0.5s ease forwards; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block;
+  }
+
+  .confidence-bar-bg { background: rgba(43,74,52,0.1); }
+
+  ::selection { background: var(--leaf-300); }
+</style>
+</head>
+<body class="min-h-screen text-[var(--moss-950)] relative">
+<div class="grain"></div>
+
+<div class="max-w-3xl mx-auto px-5 py-12 sm:py-16 relative z-10">
+
+  <!-- Header -->
+  <header class="mb-10 flex items-start justify-between">
+    <div>
+      <div class="flex items-center gap-2 mb-2">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <path d="M12 21c0-6 -3-9-8-11 6-1 9 2 11 8 2-6 5-9 11-8-5 2-8 5-8 11" class="leaf-vein" stroke="var(--moss-700)" stroke-width="1.4"/>
+          <path d="M12 21c0-6 -3-9-8-11 6-1 9 2 11 8" fill="var(--leaf-300)" opacity="0.6"/>
+        </svg>
+        <span class="text-xs tracking-[0.2em] uppercase text-[var(--moss-500)]">Field Diagnostics</span>
+      </div>
+      <h1 class="display text-4xl sm:text-5xl font-semibold leading-[1.05] text-[var(--moss-900)]">
+        Foliage<br/>Scan.
+      </h1>
+    </div>
+    <div class="text-right text-[10px] leading-relaxed text-[var(--moss-500)] mt-1 hidden sm:block">
+      <p>NO. 0042 — LEAF ANALYSIS</p>
+      <p>EST. IMAGE-BASED</p>
+    </div>
+  </header>
+
+  <p class="text-sm text-[var(--moss-700)] mb-8 max-w-lg leading-relaxed">
+    Upload a clear photo of a single leaf. The model inspects surface pattern,
+    discoloration, and lesion shape to flag common diseases and suggest next steps.
+  </p>
+
+  <!-- Upload Card -->
+  <div class="card-panel rounded-sm p-6 sm:p-8 mb-8">
+
+    <form id="upload-form">
+      <div id="drop-zone" class="drop-zone rounded-sm p-8 text-center cursor-pointer relative">
+        <input type="file" id="file-input" accept=".png,.jpg,.jpeg,image/png,image/jpeg" class="hidden" />
+        <input type="file" id="camera-input" accept="image/png,image/jpeg" capture="environment" class="hidden" />
+
+        <div id="prompt-state">
+          <svg class="mx-auto mb-3" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--moss-500)" stroke-width="1.5">
+            <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="text-sm font-bold text-[var(--moss-900)]">Drop leaf photo here</p>
+          <p class="text-xs text-[var(--moss-500)] mt-1">or click to browse — PNG, JPG, JPEG only</p>
+          <button type="button" id="camera-btn" class="sm:hidden inline-flex items-center gap-1.5 mt-4 text-xs font-bold uppercase tracking-wide text-[var(--moss-800)] border border-[var(--moss-700)]/30 rounded-sm px-4 py-2 bg-white/70">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="12" cy="13.5" r="3.2"/>
+            </svg>
+            Take Photo
+          </button>
+        </div>
+
+        <div id="preview-state" class="hidden">
+          <img id="preview-img" class="mx-auto max-h-64 rounded-sm border border-[var(--moss-700)]/15 object-contain" />
+          <p id="file-name" class="text-xs text-[var(--moss-500)] mt-3"></p>
+          <button type="button" id="clear-btn" class="text-xs mt-2 text-[var(--berry)] underline underline-offset-2">
+            remove &amp; choose another
+          </button>
+        </div>
+      </div>
+
+      <p id="file-error" class="hidden text-xs text-[var(--berry)] mt-3"></p>
+
+      <button type="submit" id="analyze-btn" disabled
+        class="btn-analyze w-full mt-6 py-3.5 rounded-sm text-sm font-bold tracking-wide uppercase flex items-center justify-center gap-2">
+        <span id="btn-text">Analyze Leaf</span>
+        <span id="btn-spinner" class="spinner hidden"></span>
+      </button>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div id="results" class="hidden fade-in">
+    <div class="card-panel rounded-sm p-6 sm:p-8">
+
+      <div class="flex items-center justify-between mb-5 pb-5 border-b border-[var(--moss-700)]/10">
+        <div class="flex items-center gap-2.5">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="disease-name" class="display text-2xl font-semibold text-[var(--moss-900)]"></span>
+        </div>
+        <span id="confidence-value" class="text-sm font-bold text-[var(--moss-700)]"></span>
+      </div>
+
+      <div class="mb-6">
+        <div class="flex justify-between text-[10px] uppercase tracking-widest text-[var(--moss-500)] mb-1.5">
+          <span>Confidence</span>
+        </div>
+        <div class="confidence-bar-bg h-2 rounded-full overflow-hidden">
+          <div id="confidence-bar" class="h-full rounded-full transition-all duration-700 ease-out" style="width:0%; background: var(--clay);"></div>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-5">
+        <div>
+          <p class="text-[10px] uppercase tracking-widest text-[var(--moss-500)] mb-2">Observation</p>
+          <p id="disease-description" class="text-sm text-[var(--moss-900)] leading-relaxed"></p>
+        </div>
+        <div>
+          <p class="text-[10px] uppercase tracking-widest text-[var(--moss-500)] mb-2">Tips &amp; Precautions</p>
+          <p id="disease-recommendation" class="text-sm text-[var(--moss-900)] leading-relaxed"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="error-box" class="hidden fade-in card-panel border-[var(--berry)]/30 rounded-sm p-5 text-sm text-[var(--berry)]"></div>
+
+  <footer class="mt-14 text-[10px] text-[var(--moss-500)] tracking-wide text-center">
+    Predictions are model-generated estimates — confirm with a local agronomist for treatment decisions.
+  </footer>
+</div>
+
+<script>
+
+const API_URL = 'https://arnetworkhouse-leaf-health.hf.space';
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const promptState = document.getElementById('prompt-state');
+const previewState = document.getElementById('preview-state');
+const previewImg = document.getElementById('preview-img');
+const fileNameEl = document.getElementById('file-name');
+const clearBtn = document.getElementById('clear-btn');
+const fileError = document.getElementById('file-error');
+const analyzeBtn = document.getElementById('analyze-btn');
+const btnText = document.getElementById('btn-text');
+const btnSpinner = document.getElementById('btn-spinner');
+const form = document.getElementById('upload-form');
+const resultsBox = document.getElementById('results');
+const errorBox = document.getElementById('error-box');
+
+const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg'];
+let selectedFile = null;
+
+function resetError() {
+  fileError.classList.add('hidden');
+  fileError.textContent = '';
+}
+
+function showFileError(msg) {
+  fileError.textContent = msg;
+  fileError.classList.remove('hidden');
+}
+
+function setFile(file) {
+  resetError();
+  if (!file) return;
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  const validExt = ['png', 'jpg', 'jpeg'].includes(ext);
+  const validType = ALLOWED_TYPES.includes(file.type) || file.type === '';
+
+  if (!validExt || !validType) {
+    showFileError('Only PNG, JPG, or JPEG files are supported.');
+    return;
+  }
+
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    previewImg.src = e.target.result;
+    promptState.classList.add('hidden');
+    previewState.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+
+  fileNameEl.textContent = file.name;
+  analyzeBtn.disabled = false;
+
+  resultsBox.classList.add('hidden');
+  errorBox.classList.add('hidden');
+}
+
+dropZone.addEventListener('click', () => {
+  if (previewState.classList.contains('hidden')) fileInput.click();
+});
+
+fileInput.addEventListener('change', (e) => setFile(e.target.files[0]));
+
+const cameraInput = document.getElementById('camera-input');
+const cameraBtn = document.getElementById('camera-btn');
+cameraBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  cameraInput.click();
+});
+cameraInput.addEventListener('change', (e) => setFile(e.target.files[0]));
+
+['dragenter', 'dragover'].forEach(evt => {
+  dropZone.addEventListener(evt, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    dropZone.classList.add('dragover');
+  });
+});
+['dragleave', 'drop'].forEach(evt => {
+  dropZone.addEventListener(evt, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    dropZone.classList.remove('dragover');
+  });
+});
+dropZone.addEventListener('drop', (e) => {
+  const file = e.dataTransfer.files[0];
+  setFile(file);
+});
+
+clearBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  selectedFile = null;
+  fileInput.value = '';
+  cameraInput.value = '';
+  promptState.classList.remove('hidden');
+  previewState.classList.add('hidden');
+  analyzeBtn.disabled = true;
+  resetError();
+});
+
+function setLoading(isLoading) {
+  analyzeBtn.disabled = isLoading;
+  btnText.textContent = isLoading ? 'Analyzing…' : 'Analyze Leaf';
+  btnSpinner.classList.toggle('hidden', !isLoading);
+}
+
+const DISEASE_INFO = {
+  'healthy': {
+    description: 'Leaf shows uniform color, intact tissue, no lesions or discoloration patterns.',
+    tips: 'Maintain regular watering schedule. Monitor weekly for early signs of pest or disease. Ensure adequate sunlight and airflow around plant.'
+  },
+  'citrus greening': {
+    description: 'Blotchy yellow mottling on leaves, often asymmetric across the midrib — classic HLB (Huanglongbing) signature.',
+    tips: 'Remove and destroy infected branches immediately. Control psyllid insects with approved insecticide. No cure exists — focus on preventing spread to nearby trees. Consult agricultural extension for quarantine rules.'
+  },
+  'bacterial spot': {
+    description: 'Small dark water-soaked spots with yellow halo, may merge into larger necrotic patches.',
+    tips: 'Avoid overhead watering to reduce leaf wetness. Apply copper-based bactericide early morning. Remove and burn fallen infected leaves. Rotate crops next season.'
+  },
+  'powdery mildew': {
+    description: 'White powdery fungal coating on leaf surface, often starting on upper leaves.',
+    tips: 'Improve air circulation by pruning dense growth. Apply sulfur or neem-based fungicide weekly. Avoid excess nitrogen fertilizer. Water at soil level, not on leaves.'
+  },
+  'leaf rust': {
+    description: 'Orange-brown pustules scattered on leaf underside, releasing powdery spores.',
+    tips: 'Apply fungicide containing triazole at first sign. Remove severely infected leaves to reduce spore spread. Space plants for better airflow. Avoid working in field when leaves are wet.'
+  },
+  'blight': {
+    description: 'Rapid browning and wilting of leaf tissue, often starting from leaf tips or edges.',
+    tips: 'Remove and destroy infected foliage immediately. Apply copper fungicide as preventive measure. Avoid overhead irrigation. Ensure proper plant spacing for airflow.'
+  },
+  'leaf spot': {
+    description: 'Circular brown or black spots with defined margins scattered across leaf surface.',
+    tips: 'Prune and dispose of infected leaves away from healthy plants. Apply fungicide at 7-10 day intervals. Water early in day so leaves dry quickly. Avoid handling wet foliage.'
+  },
+  'mosaic virus': {
+    description: 'Irregular light and dark green mottled pattern, leaf may appear puckered or distorted.',
+    tips: 'No chemical cure — remove and destroy infected plants to stop spread. Control aphids and whiteflies which transmit the virus. Disinfect tools between plants. Use virus-resistant varieties next season.'
+  }
+};
+
+function getDiseaseInfo(name) {
+  const key = (name || '').toLowerCase().trim();
+  for (const k in DISEASE_INFO) {
+    if (key.includes(k)) return DISEASE_INFO[k];
+  }
+  return null;
+}
+
+function renderResult(data) {
+  const statusDot = document.getElementById('status-dot');
+  const isHealthy = data.status === 'healthy';
+  const info = getDiseaseInfo(data.disease);
+
+  statusDot.style.background = isHealthy ? 'var(--moss-400)' : 'var(--berry)';
+  document.getElementById('disease-name').textContent = data.disease;
+  document.getElementById('confidence-value').textContent = data.confidence.toFixed(1) + '%';
+  document.getElementById('disease-description').textContent = info ? info.description : data.description;
+
+  const recEl = document.getElementById('disease-recommendation');
+  const recSource = info ? info.tips : data.recommendation;
+  const tips = recSource
+    .split(/\r?\n|(?<=[.])\s+(?=[A-Z])/)
+    .map(t => t.trim())
+    .filter(Boolean);
+  if (tips.length > 1) {
+    recEl.innerHTML = '<ul class="space-y-1.5 list-none">' +
+      tips.map(t => `<li class="flex gap-2"><span class="text-[var(--clay)] font-bold">·</span><span>${t}</span></li>`).join('') +
+      '</ul>';
+  } else {
+    recEl.textContent = recSource;
+  }
+
+  const bar = document.getElementById('confidence-bar');
+  bar.style.width = '0%';
+  const c = data.confidence;
+  const barColor = c >= 80 ? 'var(--moss-400)' : c >= 50 ? 'var(--clay)' : 'var(--berry)';
+  bar.style.background = barColor;
+  requestAnimationFrame(() => { bar.style.width = c + '%'; });
+
+  errorBox.classList.add('hidden');
+  resultsBox.classList.remove('hidden');
+}
+
+function renderError(msg) {
+  errorBox.textContent = msg;
+  errorBox.classList.remove('hidden');
+  resultsBox.classList.add('hidden');
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!selectedFile) return;
+
+  setLoading(true);
+  errorBox.classList.add('hidden');
+
+  const formData = new FormData();
+  formData.append('image', selectedFile);
+
+  try {
+    const res = await fetch(`${API_URL}/predict`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      renderError(data.error || 'Something went wrong analyzing the image.');
+      return;
+    }
+
+    renderResult(data);
+  } catch (err) {
+    renderError('Could not reach the server. Check your connection and try again.');
+  } finally {
+    setLoading(false);
+  }
+});
+</script>
+</body>
+</html>
