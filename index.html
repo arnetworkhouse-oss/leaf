@@ -140,7 +140,6 @@
     <form id="upload-form">
       <div id="drop-zone" class="drop-zone rounded-sm p-8 text-center cursor-pointer relative">
         <input type="file" id="file-input" accept=".png,.jpg,.jpeg,image/png,image/jpeg" class="hidden" />
-        <input type="file" id="camera-input" accept="image/png,image/jpeg" capture="environment" class="hidden" />
 
         <div id="prompt-state">
           <svg class="mx-auto mb-3" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--moss-500)" stroke-width="1.5">
@@ -159,14 +158,6 @@
           </button>
         </div>
       </div>
-
-      <button type="button" id="camera-btn" class="sm:hidden w-full mt-4 inline-flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[var(--moss-800)] border border-[var(--moss-700)]/30 rounded-sm px-4 py-2.5 bg-white/70">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="12" cy="13.5" r="3.2"/>
-        </svg>
-        Take Photo
-      </button>
 
       <p id="file-error" class="hidden text-xs text-[var(--berry)] mt-3"></p>
 
@@ -286,13 +277,6 @@ dropZone.addEventListener('click', () => {
 
 fileInput.addEventListener('change', (e) => setFile(e.target.files[0]));
 
-const cameraInput = document.getElementById('camera-input');
-const cameraBtn = document.getElementById('camera-btn');
-cameraBtn.addEventListener('click', () => {
-  cameraInput.click();
-});
-cameraInput.addEventListener('change', (e) => setFile(e.target.files[0]));
-
 ['dragenter', 'dragover'].forEach(evt => {
   dropZone.addEventListener(evt, (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -314,7 +298,6 @@ clearBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   selectedFile = null;
   fileInput.value = '';
-  cameraInput.value = '';
   promptState.classList.remove('hidden');
   previewState.classList.add('hidden');
   analyzeBtn.disabled = true;
