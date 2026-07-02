@@ -149,13 +149,6 @@
           </svg>
           <p class="text-sm font-bold text-[var(--moss-900)]">Drop leaf photo here</p>
           <p class="text-xs text-[var(--moss-500)] mt-1">or click to browse — PNG, JPG, JPEG only</p>
-          <button type="button" id="camera-btn" class="sm:hidden inline-flex items-center gap-1.5 mt-4 text-xs font-bold uppercase tracking-wide text-[var(--moss-800)] border border-[var(--moss-700)]/30 rounded-sm px-4 py-2 bg-white/70">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke-linecap="round" stroke-linejoin="round"/>
-              <circle cx="12" cy="13.5" r="3.2"/>
-            </svg>
-            Take Photo
-          </button>
         </div>
 
         <div id="preview-state" class="hidden">
@@ -166,6 +159,14 @@
           </button>
         </div>
       </div>
+
+      <button type="button" id="camera-btn" class="sm:hidden w-full mt-4 inline-flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[var(--moss-800)] border border-[var(--moss-700)]/30 rounded-sm px-4 py-2.5 bg-white/70">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="12" cy="13.5" r="3.2"/>
+        </svg>
+        Take Photo
+      </button>
 
       <p id="file-error" class="hidden text-xs text-[var(--berry)] mt-3"></p>
 
@@ -287,8 +288,7 @@ fileInput.addEventListener('change', (e) => setFile(e.target.files[0]));
 
 const cameraInput = document.getElementById('camera-input');
 const cameraBtn = document.getElementById('camera-btn');
-cameraBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
+cameraBtn.addEventListener('click', () => {
   cameraInput.click();
 });
 cameraInput.addEventListener('change', (e) => setFile(e.target.files[0]));
@@ -370,36 +370,71 @@ function getDiseaseInfo(name) {
   return null;
 }
 
+function stripMD(s) {
+  return (s || '').replace(/\*\*/g, '').replace(/^\s*\*\s*/, '').replace(/\s+/g, ' ').trim();
+}
+
+// VLM returns one big markdown blob duplicated into both description
+// and recommendation fields. Split it: everything before the
+// Treatment/Recommendations header = observation, everything after,
+// broken on "* **Bullet**:" markers = tips.
+function parseDiagnosis(raw) {
+  const text = (raw || '').replace(/\r/g, '').trim();
+  if (!text) return { observation: '', tips: [] };
+
+  const idx = text.search(/\*{0,2}\s*(Treatment|Recommendations?|Care Recommendations?)\s*\*{0,2}\s*:?/i);
+  let obsPart = idx > -1 ? text.slice(0, idx) : text;
+  let tipsPart = idx > -1 ? text.slice(idx) : '';
+
+  const observation = stripMD(obsPart);
+
+  let tips = [];
+  if (tipsPart) {
+    tipsPart = tipsPart.replace(/^\*{0,2}[^*:]*\*{0,2}:?\s*/, ''); // drop section header
+    tips = tipsPart.split(/\*\s+(?=\*\*)/).map(t => stripMD(t)).filter(Boolean);
+    if (tips.length <= 1) {
+      tips = tipsPart.split(/\.\s+(?=[A-Z])/).map(t => stripMD(t)).filter(Boolean);
+    }
+  }
+  return { observation, tips };
+}
+
 function renderResult(data) {
   const statusDot = document.getElementById('status-dot');
   const isHealthy = data.status === 'healthy';
-  const info = getDiseaseInfo(data.disease);
 
   statusDot.style.background = isHealthy ? 'var(--moss-400)' : 'var(--berry)';
-  document.getElementById('disease-name').textContent = data.disease;
-  document.getElementById('confidence-value').textContent = data.confidence.toFixed(1) + '%';
-  document.getElementById('disease-description').textContent = info ? info.description : data.description;
+  document.getElementById('disease-name').textContent = stripMD(data.disease);
+
+  const raw = data.description || data.recommendation || '';
+  const { observation, tips } = parseDiagnosis(raw);
+  document.getElementById('disease-description').textContent = observation;
 
   const recEl = document.getElementById('disease-recommendation');
-  const recSource = info ? info.tips : data.recommendation;
-  const tips = recSource
-    .split(/\r?\n|(?<=[.])\s+(?=[A-Z])/)
-    .map(t => t.trim())
-    .filter(Boolean);
   if (tips.length > 1) {
     recEl.innerHTML = '<ul class="space-y-1.5 list-none">' +
       tips.map(t => `<li class="flex gap-2"><span class="text-[var(--clay)] font-bold">·</span><span>${t}</span></li>`).join('') +
       '</ul>';
   } else {
-    recEl.textContent = recSource;
+    recEl.textContent = stripMD(tips[0] || '');
   }
 
+  const confRow = document.getElementById('confidence-value').closest('.flex') || document.getElementById('confidence-value').parentElement;
   const bar = document.getElementById('confidence-bar');
-  bar.style.width = '0%';
-  const c = data.confidence;
-  const barColor = c >= 80 ? 'var(--moss-400)' : c >= 50 ? 'var(--clay)' : 'var(--berry)';
-  bar.style.background = barColor;
-  requestAnimationFrame(() => { bar.style.width = c + '%'; });
+  const barWrap = bar.closest('.confidence-bar-bg') || bar.parentElement;
+
+  if (data.confidence === null || data.confidence === undefined) {
+    document.getElementById('confidence-value').textContent = '';
+    if (barWrap) barWrap.style.display = 'none';
+  } else {
+    if (barWrap) barWrap.style.display = '';
+    document.getElementById('confidence-value').textContent = data.confidence.toFixed(1) + '%';
+    bar.style.width = '0%';
+    const c = data.confidence;
+    const barColor = c >= 80 ? 'var(--moss-400)' : c >= 50 ? 'var(--clay)' : 'var(--berry)';
+    bar.style.background = barColor;
+    requestAnimationFrame(() => { bar.style.width = c + '%'; });
+  }
 
   errorBox.classList.add('hidden');
   resultsBox.classList.remove('hidden');
